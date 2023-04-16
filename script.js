@@ -3,6 +3,11 @@ const { Client } = require("basic-ftp");
 const fs = require("fs");
 const path = require("path");
 const { exec } = require("child_process");
+const archiver = require("archiver");
+const unzipper = require("unzipper");
+
+// Version
+let currentVersion = null;
 
 window.addEventListener("DOMContentLoaded", () => {
   // Nueva llamada a la función para listar los archivos FTP
@@ -11,13 +16,13 @@ window.addEventListener("DOMContentLoaded", () => {
 
 async function loadFtpFiles() {
   await listFtpFiles();
-  vaildateJarExistence();
-  // downloadLatestFile();
 }
 
 async function listFtpFiles() {
   const client = new Client();
   let fileNames = [];
+
+  await validateJarExistence();
   try {
     await client.access({
       host: "ftp.systemjaade.com",
@@ -28,17 +33,33 @@ async function listFtpFiles() {
 
     const files = await client.list("/Healthy");
     fileNames = files.map((file) => file.name);
-    const recentFile = findMostRecentFile(fileNames);
-    console.log("recent: ", recentFile);
+    const latestFile = findMostRecentFile(fileNames);
 
+    // si no existe la carpeta Healthy crearlo
     const dir = path.join(__dirname, "Healthy");
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir);
     }
-    console.log('dir',dir);
-    
-    const localFilePath = path.join(__dirname, "Healthy", recentFile);
-    await client.downloadTo(localFilePath, recentFile);
+
+    // Compara la version actual instala y la ultima version disponible
+    let updatedVersion = validateVersions(currentVersion, latestFile);
+    // Si la version esta desactualizada, descarga la ultima version
+    if (!updatedVersion) {
+      //validar si existen archivo en servidor para descargar
+      if (!latestFile) {
+        console.log("No se encontraron archivos para descargar.");
+        return;
+      }
+      // descargar archivo
+      const localFilePath = path.join(__dirname, "Healthy", latestFile);
+      await client.downloadTo(localFilePath, `/Healthy/${latestFile}`);
+      console.log(`Descargado el archivo ${latestFile}.`);
+
+      // descomprimir el archivo descargado
+      decompressFile(latestFile);
+    }
+    // Iniciar Aplicacion
+   // await startApplication();
   } catch (error) {
     console.log(error);
   } finally {
@@ -69,7 +90,7 @@ function findMostRecentFile(fileNames) {
   return mostRecentFile;
 }
 
-function vaildateJarExistence() {
+function validateJarExistence() {
   // Ruta de la carpeta "Healthy"
   const healthyFolderPath = path.join(__dirname, "Healthy");
 
@@ -85,7 +106,7 @@ function vaildateJarExistence() {
 
     if (!jarFile) {
       console.log("No se encontró ningún archivo .jar en la carpeta Healthy.");
-      return;
+      return null;
     }
 
     // Ejecutar el comando "java -jar nombre-del-archivo.jar -version" en una terminal
@@ -98,8 +119,72 @@ function vaildateJarExistence() {
         console.log(err);
         return;
       }
-      // console.log(stdout); // imprime version actual en sistema
       currentVersion = stdout;
+      return stdout;
     });
+  });
+  return currentVersion;
+}
+
+function validateVersions(currentVersion, webVersion) {
+  console.log("currentVersion", currentVersion);
+  console.log("webVersion", webVersion);
+  // Extraer la parte de la fecha de latestFile utilizando una expresión regular
+  const match = webVersion.match(/(\d{2}\.\d{2}\.\d{2})/);
+  const latestVersion = match ? match[1].replace(/\./g, "-") : null;
+
+  // Comparar las dos fechas
+  if (currentVersion === latestVersion) {
+    console.log("La versión actual es la última disponible");
+    return true;
+  } else {
+    console.log("Hay una versión más reciente disponible");
+    return false;
+  }
+}
+
+function decompressFile(fileName) {
+  // Ruta del archivo ZIP descargado
+  const zipFilePath = path.join(__dirname, "Healthy", fileName);
+
+  // Crear un stream de lectura para el archivo ZIP
+  const readStream = fs.createReadStream(zipFilePath);
+
+  // Crear un stream de escritura para extraer los archivos
+  const writeStream = unzipper.Extract({
+    path: path.join(__dirname, "Healthy"),
+  });
+
+  // Escuchar el evento "close" del stream de escritura
+  writeStream.on("close", () => {
+    console.log("Archivos extraídos exitosamente.");
+  });
+
+  // Piping de streams para extraer los archivos
+  readStream.pipe(writeStream);
+
+  // Eliminar archivo zip
+  fs.unlink(zipFilePath, (err) => {
+    if (err) {
+      console.error(err);
+    } else {
+      console.log(`${zipFilePath} fue eliminado`);
+    }
+  });
+}
+
+function startApplication() {
+  // Lanzar el aplicativo
+  const jarFile = "Healthy.jar";
+  exec(`java -jar ${jarFile}`, (error, stdout, stderr) => {
+    if (error) {
+      console.error(`error: ${error.message}`);
+      return;
+    }
+    if (stderr) {
+      console.error(`stderr: ${stderr}`);
+      return;
+    }
+    console.log(`stdout: ${stdout}`);
   });
 }
