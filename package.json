@@ -1,0 +1,22 @@
+{
+  "name": "launcher-healthy",
+  "version": "1.0.0",
+  "description": "Instalador para la aplicacion java-desktop de Healthy",
+  "main": "main.js",
+  "build": {
+    "win": {
+      "icon": "images/Healthy.ico"
+    }
+  },
+  "scripts": {
+    "start": "electron .",
+    "start:dev": "ELECTRON_ENABLE_LOGGING=true ELECTRON_ENABLE_STACK_DUMPING=true NODE_ENV=development electron --inspect=9222 ."
+  },
+  "author": "System JAADE",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^24.1.2",
+    "electron-packager": "^17.1.1",
+    "electron-reload": "^2.0.0-alpha.1"
+  }
+}
