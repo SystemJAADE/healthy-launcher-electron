@@ -56,10 +56,22 @@ async function listFtpFiles() {
       console.log(`Descargado el archivo ${latestFile}.`);
 
       // descomprimir el archivo descargado
-      decompressFile(latestFile);
+      await new Promise((resolve, reject) => {
+        decompressFile(latestFile, () => {
+          resolve();
+        });
+      });
     }
     // Iniciar Aplicacion
-   // await startApplication();
+    // Ejecutar la aplicación Java
+    console.log('gaaa');
+    
+    const jarPath = path.join(__dirname, "Healthy", "Healthy.jar");
+    const java = spawn("java", ["-jar", jarPath]);
+
+    java.on("close", (code) => {
+      console.log(`La aplicación Java se cerró con el código ${code}`);
+    });
   } catch (error) {
     console.log(error);
   } finally {
