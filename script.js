@@ -8,8 +8,10 @@ const unzipper = require("unzipper");
 
 // Version
 let currentVersion = null;
+let appStatus = null;
 
 window.addEventListener("DOMContentLoaded", () => {
+  appStatus = document.querySelector(".app-status");
   // Nueva llamada a la función para listar los archivos FTP
   loadFtpFiles();
 });
@@ -48,12 +50,22 @@ async function listFtpFiles() {
       //validar si existen archivo en servidor para descargar
       if (!latestFile) {
         console.log("No se encontraron archivos para descargar.");
+        appStatus.innerHTML = "No se encontraron archivos para descargar.";
         return;
       }
       // descargar archivo
       const localFilePath = path.join(__dirname, "Healthy", latestFile);
-      await client.downloadTo(localFilePath, `/Healthy/${latestFile}`);
+      const remoteFilePath = `/Healthy/${latestFile}`;
+      //mostrar en progressbar el estado de descarga
+      await client.downloadTo(localFilePath, remoteFilePath);
+      // , (totalTransferred, chunkSize, total) => {
+      //   const percent = ((totalTransferred / total) * 100).toFixed(2);
+      //   console.log(`Descargando ${latestFile} ${percent}%`);
+      //   appStatus.innerHTML = `Descargando ${latestFile} ${percent}%`;
+      //   document.querySelector('.progress').style.width = `${percent}%`;
+      // });
       console.log(`Descargado el archivo ${latestFile}.`);
+      appStatus.innerHTML = `Descargado el archivo ${latestFile}.`;
 
       // descomprimir el archivo descargado
       await new Promise((resolve, reject) => {
@@ -64,13 +76,14 @@ async function listFtpFiles() {
     }
     // Iniciar Aplicacion
     // Ejecutar la aplicación Java
-    console.log('gaaa');
-    
+    console.log("gaaa");
+
     const jarPath = path.join(__dirname, "Healthy", "Healthy.jar");
     const java = spawn("java", ["-jar", jarPath]);
 
     java.on("close", (code) => {
       console.log(`La aplicación Java se cerró con el código ${code}`);
+      appStatus.innerHTML = `La aplicación Java se cerró con el código ${code}`;
     });
   } catch (error) {
     console.log(error);
@@ -118,6 +131,8 @@ function validateJarExistence() {
 
     if (!jarFile) {
       console.log("No se encontró ningún archivo .jar en la carpeta Healthy.");
+      appStatus.innerHTML =
+        "No se encontró ningún archivo .jar en la carpeta Healthy.";
       return null;
     }
 
@@ -139,8 +154,6 @@ function validateJarExistence() {
 }
 
 function validateVersions(currentVersion, webVersion) {
-  console.log("currentVersion", currentVersion);
-  console.log("webVersion", webVersion);
   // Extraer la parte de la fecha de latestFile utilizando una expresión regular
   const match = webVersion.match(/(\d{2}\.\d{2}\.\d{2})/);
   const latestVersion = match ? match[1].replace(/\./g, "-") : null;
@@ -148,9 +161,11 @@ function validateVersions(currentVersion, webVersion) {
   // Comparar las dos fechas
   if (currentVersion === latestVersion) {
     console.log("La versión actual es la última disponible");
+    appStatus.innerHTML = "La versión actual es la última disponible";
     return true;
   } else {
     console.log("Hay una versión más reciente disponible");
+    appStatus.innerHTML = "Hay una versión más reciente disponible";
     return false;
   }
 }
@@ -170,6 +185,7 @@ function decompressFile(fileName) {
   // Escuchar el evento "close" del stream de escritura
   writeStream.on("close", () => {
     console.log("Archivos extraídos exitosamente.");
+    appStatus.innerHTML = "Archivos extraídos exitosamente.";
   });
 
   // Piping de streams para extraer los archivos
@@ -181,6 +197,7 @@ function decompressFile(fileName) {
       console.error(err);
     } else {
       console.log(`${zipFilePath} fue eliminado`);
+      appStatus.innerHTML = `${zipFilePath} fue eliminado`;
     }
   });
 }
