@@ -1,31 +1,28 @@
-const { app } = require("electron");
 const { Client } = require("basic-ftp");
 const fs = require("fs");
 const path = require("path");
 const { exec } = require("child_process");
-const archiver = require("archiver");
-const unzipper = require("unzipper");
+const JSZip = require("jszip");
 
 // Version
 let currentVersion = null;
 let appStatus = null;
+let progressBar;
 
 window.addEventListener("DOMContentLoaded", () => {
   appStatus = document.querySelector(".app-status");
+  progressBar = document.querySelector(".progress");
+  validateJarExistence();
   // Nueva llamada a la función para listar los archivos FTP
-  loadFtpFiles();
+  listFtpFiles();
 });
-
-async function loadFtpFiles() {
-  await listFtpFiles();
-}
 
 async function listFtpFiles() {
   const client = new Client();
   let fileNames = [];
 
-  await validateJarExistence();
   try {
+    appStatus.innerHTML = `version disponible: ${currentVersion}`;
     await client.access({
       host: "ftp.systemjaade.com",
       port: "21",
@@ -46,6 +43,8 @@ async function listFtpFiles() {
     // Compara la version actual instala y la ultima version disponible
     let updatedVersion = validateVersions(currentVersion, latestFile);
     // Si la version esta desactualizada, descarga la ultima version
+    console.log('dupted',updatedVersion);
+    
     if (!updatedVersion) {
       //validar si existen archivo en servidor para descargar
       if (!latestFile) {
@@ -58,28 +57,13 @@ async function listFtpFiles() {
       const remoteFilePath = `/Healthy/${latestFile}`;
       //mostrar en progressbar el estado de descarga
       await client.downloadTo(localFilePath, remoteFilePath);
-      // , (totalTransferred, chunkSize, total) => {
-      //   const percent = ((totalTransferred / total) * 100).toFixed(2);
-      //   console.log(`Descargando ${latestFile} ${percent}%`);
-      //   appStatus.innerHTML = `Descargando ${latestFile} ${percent}%`;
-      //   document.querySelector('.progress').style.width = `${percent}%`;
-      // });
       console.log(`Descargado el archivo ${latestFile}.`);
       appStatus.innerHTML = `Descargado el archivo ${latestFile}.`;
 
       // descomprimir el archivo descargado
-      await new Promise((resolve, reject) => {
-        decompressFile(latestFile, () => {
-          resolve();
-        });
-      });
+      await extractFile(latestFile);
     }
-    // Iniciar Aplicacion
-    // Ejecutar la aplicación Java
-    console.log("gaaa");
-
-    const jarPath = path.join(__dirname, "Healthy", "Healthy.jar");
-    const java = spawn("java", ["-jar", jarPath]);
+    await initApp();
 
     java.on("close", (code) => {
       console.log(`La aplicación Java se cerró con el código ${code}`);
@@ -92,7 +76,26 @@ async function listFtpFiles() {
   }
 }
 
-function findMostRecentFile(fileNames) {
+async function initApp() {
+  console.log("entrando funcions");
+
+  // Iniciar Aplicacion
+  const jarPath = path.join(__dirname, "Healthy", "Healthy.jar");
+  console.log("jarPath", jarPath);
+
+  const java = exec("java", ["-jar", jarPath]);
+  console.log("este ya paso");
+
+  java.stdout.on("data", (data) => {
+    console.log(`stdout: ${data}`);
+  });
+
+  java.stderr.on("data", (data) => {
+    console.error(`stderr: ${data}`);
+  });
+}
+
+async function findMostRecentFile(fileNames) {
   let mostRecentFile = null;
   let mostRecentDate = new Date(0);
 
@@ -153,7 +156,7 @@ function validateJarExistence() {
   return currentVersion;
 }
 
-function validateVersions(currentVersion, webVersion) {
+async function validateVersions(currentVersion, webVersion) {
   // Extraer la parte de la fecha de latestFile utilizando una expresión regular
   const match = webVersion.match(/(\d{2}\.\d{2}\.\d{2})/);
   const latestVersion = match ? match[1].replace(/\./g, "-") : null;
@@ -170,50 +173,56 @@ function validateVersions(currentVersion, webVersion) {
   }
 }
 
-function decompressFile(fileName) {
-  // Ruta del archivo ZIP descargado
-  const zipFilePath = path.join(__dirname, "Healthy", fileName);
+async function extractFile(zipFileName) {
+  const zipFilePath = path.join(__dirname, "Healthy", zipFileName);
 
-  // Crear un stream de lectura para el archivo ZIP
-  const readStream = fs.createReadStream(zipFilePath);
-
-  // Crear un stream de escritura para extraer los archivos
-  const writeStream = unzipper.Extract({
-    path: path.join(__dirname, "Healthy"),
-  });
-
-  // Escuchar el evento "close" del stream de escritura
-  writeStream.on("close", () => {
-    console.log("Archivos extraídos exitosamente.");
-    appStatus.innerHTML = "Archivos extraídos exitosamente.";
-  });
-
-  // Piping de streams para extraer los archivos
-  readStream.pipe(writeStream);
-
-  // Eliminar archivo zip
-  fs.unlink(zipFilePath, (err) => {
+  fs.readFile(zipFilePath, async function (err, data) {
     if (err) {
       console.error(err);
-    } else {
-      console.log(`${zipFilePath} fue eliminado`);
-      appStatus.innerHTML = `${zipFilePath} fue eliminado`;
+      return;
     }
-  });
-}
 
-function startApplication() {
-  // Lanzar el aplicativo
-  const jarFile = "Healthy.jar";
-  exec(`java -jar ${jarFile}`, (error, stdout, stderr) => {
-    if (error) {
-      console.error(`error: ${error.message}`);
-      return;
-    }
-    if (stderr) {
-      console.error(`stderr: ${stderr}`);
-      return;
-    }
-    console.log(`stdout: ${stdout}`);
+    const zip = await JSZip.loadAsync(data);
+
+    const progressTotal = Object.keys(zip.files).length;
+    let progressCurrent = 0;
+
+    // Iterar sobre todas las entradas del archivo ZIP
+    zip.forEach(async function (relativePath, file) {
+      // Verificar si es un archivo o una carpeta
+      if (!file.dir) {
+        // Calcular la ruta absoluta del archivo en el sistema de archivos
+        const filePath = path.join(__dirname, "Healthy", relativePath);
+
+        // Crear la carpeta padre del archivo, si no existe
+        const folderPath = path.dirname(filePath);
+        if (!fs.existsSync(folderPath)) {
+          fs.mkdirSync(folderPath, { recursive: true });
+        }
+
+        // Extraer el archivo y escribir su contenido en el sistema de archivos
+        const content = await file.async("nodebuffer");
+        fs.writeFileSync(filePath, content);
+
+        // Actualizar el progreso en la barra de progreso
+        progressCurrent++;
+        let progressBar = document.querySelector(".progress");
+        let extractionPercentage = Math.floor(
+          (progressCurrent / progressTotal) * 100
+        );
+        progressBar.style.width = `${extractionPercentage}%`;
+      }
+    });
+    // Eliminar archivo zip
+    fs.unlink(zipFilePath, (err) => {
+      if (err) {
+        console.error(err);
+      } else {
+        console.log(`${zipFilePath} fue eliminado`);
+        appStatus.innerHTML = `${zipFilePath} fue eliminado`;
+      }
+    });
+    console.log("Archivos extraídos exitosamente.");
+    appStatus.innerHTML = "Archivos extraídos exitosamente.";
   });
 }

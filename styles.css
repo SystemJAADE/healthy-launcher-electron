@@ -44,7 +44,7 @@ body {
   }
   
   .progress {
-    width: 50%;
+    width: 0%;
     height: 100%;
     background-color: #007bff;
     transition: width 1s ease-out;
@@ -53,6 +53,8 @@ body {
   .app-status {
     font-size: 0.8em;
     margin-top: 20px;
+    align-items: center;
+    text-align: center;
   }
   
   .loading-bar {
