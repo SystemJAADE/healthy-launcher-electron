@@ -9,12 +9,12 @@ let currentVersion = null;
 let appStatus = null;
 let progressBar;
 
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
   appStatus = document.querySelector(".app-status");
   progressBar = document.querySelector(".progress");
-  validateJarExistence();
+  await validateJarExistence();
   // Nueva llamada a la función para listar los archivos FTP
-  listFtpFiles();
+  await listFtpFiles();
 });
 
 async function listFtpFiles() {
@@ -32,7 +32,7 @@ async function listFtpFiles() {
 
     const files = await client.list("/Healthy");
     fileNames = files.map((file) => file.name);
-    const latestFile = findMostRecentFile(fileNames);
+    const latestFile = await findMostRecentFile(fileNames);
 
     // si no existe la carpeta Healthy crearlo
     const dir = path.join(__dirname, "Healthy");
@@ -41,10 +41,10 @@ async function listFtpFiles() {
     }
 
     // Compara la version actual instala y la ultima version disponible
-    let updatedVersion = validateVersions(currentVersion, latestFile);
+    let updatedVersion = await validateVersions(currentVersion, latestFile);
     // Si la version esta desactualizada, descarga la ultima version
-    console.log('dupted',updatedVersion);
-    
+    console.log('dupted', updatedVersion);
+
     if (!updatedVersion) {
       //validar si existen archivo en servidor para descargar
       if (!latestFile) {
@@ -64,11 +64,6 @@ async function listFtpFiles() {
       await extractFile(latestFile);
     }
     await initApp();
-
-    java.on("close", (code) => {
-      console.log(`La aplicación Java se cerró con el código ${code}`);
-      appStatus.innerHTML = `La aplicación Java se cerró con el código ${code}`;
-    });
   } catch (error) {
     console.log(error);
   } finally {
@@ -83,15 +78,14 @@ async function initApp() {
   const jarPath = path.join(__dirname, "Healthy", "Healthy.jar");
   console.log("jarPath", jarPath);
 
-  const java = exec("java", ["-jar", jarPath]);
+  exec(`java -jar '${jarPath}'`);
+  
   console.log("este ya paso");
+  console.log(`java -jar '${jarPath}'`);
 
-  java.stdout.on("data", (data) => {
-    console.log(`stdout: ${data}`);
-  });
-
-  java.stderr.on("data", (data) => {
-    console.error(`stderr: ${data}`);
+  java.on("close", (code) => {
+    console.log(`La aplicación Java se cerró con el código ${code}`);
+    appStatus.innerHTML = `La aplicación Java se cerró con el código ${code}`;
   });
 }
 
@@ -118,7 +112,7 @@ async function findMostRecentFile(fileNames) {
   return mostRecentFile;
 }
 
-function validateJarExistence() {
+async function validateJarExistence() {
   // Ruta de la carpeta "Healthy"
   const healthyFolderPath = path.join(__dirname, "Healthy");
 
@@ -136,7 +130,7 @@ function validateJarExistence() {
       console.log("No se encontró ningún archivo .jar en la carpeta Healthy.");
       appStatus.innerHTML =
         "No se encontró ningún archivo .jar en la carpeta Healthy.";
-      return null;
+      return;
     }
 
     // Ejecutar el comando "java -jar nombre-del-archivo.jar -version" en una terminal
@@ -220,6 +214,7 @@ async function extractFile(zipFileName) {
       } else {
         console.log(`${zipFilePath} fue eliminado`);
         appStatus.innerHTML = `${zipFilePath} fue eliminado`;
+        window.close();
       }
     });
     console.log("Archivos extraídos exitosamente.");
